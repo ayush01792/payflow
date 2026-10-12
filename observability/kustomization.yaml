@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+- name: otel-collector-config
+  files:
+  - config.yml=otel/otel-collector-docker.yml
+- name: payflow-alerts
+  files:
+  - alerts.yml=prometheus/alerts.yml
+- name: grafana-datasource
+  files:
+  - prometheus.yml=grafana/provisioning/datasources/prometheus.yml
+- name: grafana-provider
+  files:
+  - payflow.yml=grafana/provisioning/dashboards/payflow.yml
+- name: grafana-dashboard
+  files:
+  - payflow-overview.json=grafana/payflow-dashboard.json

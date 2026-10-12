@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+rule_files:
+- /etc/payflow-alerts/alerts.yml
+scrape_configs:
+- job_name: payflow
+  metrics_path: /actuator/prometheus
+  dns_sd_configs:
+  - names:
+    - payflow-metrics.payflow.svc.cluster.local
+    type: A
+    port: 9091
+
+# Optional Step 15 namespace; missing targets are expected outside performance runs.
+- job_name: payflow-performance
+  metrics_path: /actuator/prometheus
+  dns_sd_configs:
+  - names:
+    - payflow-metrics.payflow-performance.svc.cluster.local
+    type: A
+    port: 9091

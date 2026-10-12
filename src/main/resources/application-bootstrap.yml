@@ -1,0 +1,25 @@
+spring:
+  main:
+    web-application-type: none
+  kafka:
+    admin:
+      auto-create: false
+    listener:
+      auto-startup: false
+payflow:
+  providers:
+    enabled: false
+  outbox:
+    enabled: false
+  reconciliation:
+    enabled: false
+  mock-providers:
+    enabled: false
+  observability:
+    snapshot-enabled: false
+management:
+  tracing:
+    enabled: false
+  health:
+    kafka:
+      enabled: false

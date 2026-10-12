@@ -1,0 +1,5 @@
+# This opt-in profile permits only safe management endpoints on a loopback listener.
+management:
+  server:
+    address: 127.0.0.1
+    port: ${MANAGEMENT_PORT:9091}

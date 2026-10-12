@@ -1,0 +1,13 @@
+# Explicit local demo profile; host publication is restricted to loopback by Compose.
+# Use the API port for probes and scrapes here. Host-only Step 12 profile stays on 9091.
+management:
+  server:
+    port: 8080
+spring:
+  datasource:
+    hikari:
+      connection-timeout: 5000
+  lifecycle:
+    timeout-per-shutdown-phase: 40s
+server:
+  shutdown: graceful

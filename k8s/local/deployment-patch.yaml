@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payflow
+spec:
+  # A third JVM can exhaust an 8 GB laptop running the complete local stack.
+  # The base keeps zero-unavailable rolling updates for adequately sized clusters.
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    spec:
+      containers:
+      - name: payflow
+        # Cold JVM startup can be slow on a constrained single-node laptop.
+        startupProbe:
+          failureThreshold: 60
+      initContainers:
+      - name: wait-for-local-infrastructure
+        image: busybox:1.37.0-musl
+        command:
+        - sh
+        - -ec
+        - for target in postgres:5432 redis:6379 kafka:9092; do host=${target%:*};
+          port=${target#*:}; until nc -z -w 2 "$host" "$port"; do sleep 2; done; done
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            cpu: 100m
+            memory: 32Mi

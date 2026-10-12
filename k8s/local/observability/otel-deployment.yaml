@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  labels:
+    app.kubernetes.io/name: otel-collector
+    app.kubernetes.io/part-of: payflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: otel-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: otel-collector
+        app.kubernetes.io/part-of: payflow
+    spec:
+      containers:
+      - name: otel-collector
+        image: payflow-otel-collector:local
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: otlp-http
+          containerPort: 4318
+        - name: otlp-grpc
+          containerPort: 4317
+        - name: health
+          containerPort: 13133
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        args:
+        - --config=/etc/otelcol/config.yml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/otelcol
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /
+            port: health
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: health
+          periodSeconds: 15
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      automountServiceAccountToken: false
+      volumes:
+      - name: config
+        configMap:
+          name: otel-collector-config
+          items:
+          - key: config.yml
+            path: config.yml

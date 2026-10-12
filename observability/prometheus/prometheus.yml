@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+rule_files:
+  - alerts.yml
+scrape_configs:
+  - job_name: payflow
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9091']
+# PayFlow must run with the observability-local profile. Remote scraping needs a
+# separately secured internal management boundary; do not expose this demo listener.

@@ -1,0 +1,67 @@
+# Starter demo thresholds: tune using real workload/SLOs before production use.
+groups:
+  - name: payflow-starter
+    rules:
+      - alert: HighHttp5xxRate
+        expr: sum(rate(http_server_requests_seconds_count{application="payflow",status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{application="payflow"}[5m])),0.001) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP 5xx ratio above 5%"
+      - alert: HighP99Latency
+        expr: histogram_quantile(0.99,sum by (le)(rate(http_server_requests_seconds_bucket{application="payflow"}[5m]))) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP P99 latency above 2 seconds"
+      - alert: OutboxBacklogGrowing
+        expr: payflow_outbox_pending{application="payflow"} > 100 and deriv(payflow_outbox_pending{application="payflow"}[10m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox backlog above 100 and growing"
+      - alert: OutboxTooOld
+        expr: payflow_outbox_oldest_pending_age_seconds{application="payflow"} > 120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest unpublished event older than 2 minutes"
+      - alert: OutboxPublishFailures
+        expr: sum(increase(payflow_outbox_failed_total{application="payflow"}[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Repeated outbox publish failures"
+      - alert: ProviderFailureRateHigh
+        expr: sum by(provider)(rate(payflow_provider_requests_total{application="payflow",outcome=~"TECHNICAL_FAILURE|TIMEOUT|CIRCUIT_OPEN"}[5m])) / clamp_min(sum by(provider)(rate(payflow_provider_requests_total{application="payflow"}[5m])),0.001) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Provider technical failure ratio above 20%"
+      - alert: PendingConfirmationBacklog
+        expr: payflow_payment_pending_confirmation_count{application="payflow"} + payflow_refund_pending_confirmation_count{application="payflow"} > 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Confirmation backlog above 20"
+      - alert: DatabaseConnectionPoolNearExhaustion
+        expr: hikaricp_connections_active{application="payflow"} / hikaricp_connections_max{application="payflow"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database pool above 90% utilization"
+      - alert: ObservabilitySnapshotStale
+        expr: payflow_observability_snapshot_age_seconds{application="payflow"} > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database metrics snapshot is stale"

@@ -1,0 +1,193 @@
+name: payflow
+
+services:
+  frontend:
+    image: payflow-frontend:local
+    build:
+      context: ./frontend
+      args:
+        VITE_PAYFLOW_API_URL: /backend
+    environment:
+      PAYFLOW_UPSTREAM: http://payflow:8080
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3001}:8080"
+    depends_on:
+      payflow:
+        condition: service_started
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=32m,uid=101,gid=101
+      - /etc/nginx/conf.d:rw,nosuid,size=1m,uid=101,gid=101
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    restart: "on-failure:3"
+    networks: [payflow-network]
+
+  payflow:
+    image: payflow:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: compose
+      DB_HOST: postgres
+      DB_NAME: ${POSTGRES_DB:-payflow}
+      DB_USERNAME: ${POSTGRES_USER:-payflow}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      API_KEY_PEPPER: ${API_KEY_PEPPER:?Set a random API_KEY_PEPPER of at least 32 bytes in .env}
+      PROVIDER_A_WEBHOOK_SECRET: ${PROVIDER_A_WEBHOOK_SECRET:?Set PROVIDER_A_WEBHOOK_SECRET in .env}
+      PROVIDER_B_WEBHOOK_SECRET: ${PROVIDER_B_WEBHOOK_SECRET:?Set PROVIDER_B_WEBHOOK_SECRET in .env}
+      MOCK_PROVIDERS_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      TRACING_SAMPLING_PROBABILITY: ${TRACING_SAMPLING_PROBABILITY:-0.1}
+      JAVA_TOOL_OPTIONS: ${PAYFLOW_JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=60.0 -XX:InitialRAMPercentage=25.0}
+    ports:
+      - "127.0.0.1:${PAYFLOW_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=128m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    restart: "on-failure:3"
+    stop_grace_period: 120s
+    networks: [payflow-network]
+
+  postgres:
+    image: postgres:17.6
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-payflow}
+      POSTGRES_USER: ${POSTGRES_USER:-payflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+    networks: [payflow-network]
+
+  redis:
+    image: redis:7.4.2-alpine
+    # Cache/limiter coordination is ephemeral; financial state stays in PostgreSQL.
+    command: [redis-server, --save, "", --appendonly, "no"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [payflow-network]
+
+  kafka:
+    image: apache/kafka:3.9.1
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:9092,HOST://0.0.0.0:19092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,HOST://localhost:${KAFKA_HOST_PORT:-19092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    ports:
+      - "127.0.0.1:${KAFKA_HOST_PORT:-19092}:19092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: [CMD-SHELL, '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 >/dev/null 2>&1']
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks: [payflow-network]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./observability/prometheus/prometheus-docker.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    healthcheck:
+      test: [CMD, /bin/wget, -q, --spider, http://127.0.0.1:9090/-/ready]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [payflow-network]
+
+  grafana:
+    image: grafana/grafana:12.2.1
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-payflow}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/payflow-dashboard.json:/var/lib/grafana/dashboards/payflow-dashboard.json:ro
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    healthcheck:
+      test: [CMD, /usr/bin/curl, --fail, --silent, --max-time, "2", http://127.0.0.1:3000/api/health]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    networks: [payflow-network]
+
+  otel-collector:
+    image: payflow-otel-collector:local
+    build:
+      context: ./observability/otel
+      dockerfile: Dockerfile
+    command: [--config=/etc/otelcol/config.yml]
+    volumes:
+      - ./observability/otel/otel-collector-docker.yml:/etc/otelcol/config.yml:ro
+    healthcheck:
+      test: [CMD, /busybox, wget, -q, --spider, http://127.0.0.1:13133/]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [payflow-network]
+
+networks:
+  payflow-network:
+    driver: bridge
+volumes:
+  postgres-data:
+  kafka-data:
+  prometheus-data:
+  grafana-data:

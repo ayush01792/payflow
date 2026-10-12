@@ -1,0 +1,240 @@
+spring:
+  application:
+    name: payflow
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:4}
+      thread-name-prefix: payflow-scheduler-
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:payflow}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: 1s
+      timeout: 1s
+      repositories:
+        enabled: false
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 3
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        "enable.idempotence": true
+        "delivery.timeout.ms": 30000
+        "request.timeout.ms": 10000
+        "max.block.ms": 3000
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP:payflow-payment-lifecycle}
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        "spring.deserializer.value.delegate.class": org.springframework.kafka.support.serializer.JsonDeserializer
+        "spring.json.value.default.type": com.payflow.payment.event.PaymentEvent
+        "spring.json.trusted.packages": com.payflow.payment.event
+        "spring.json.use.type.headers": false
+    listener:
+      observation-enabled: true
+      ack-mode: record
+      concurrency: ${KAFKA_CONSUMER_CONCURRENCY:3}
+      auto-startup: ${KAFKA_LISTENER_AUTO_STARTUP:true}
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+  tomcat:
+    mbeanregistry:
+      enabled: true
+
+payflow:
+  observability:
+    snapshot-enabled: ${OBSERVABILITY_SNAPSHOT_ENABLED:true}
+    snapshot-delay-ms: ${OBSERVABILITY_SNAPSHOT_DELAY_MS:15000}
+  security:
+    api-key-pepper: ${API_KEY_PEPPER}
+    # Approximate last-used telemetry; credential/revocation lookups remain per request.
+    api-key-usage-audit-interval-seconds: ${API_KEY_USAGE_AUDIT_INTERVAL_SECONDS:60}
+  payment-cache:
+    ttl-seconds: ${PAYMENT_CACHE_TTL_SECONDS:300}
+  rate-limit:
+    create-limit: ${PAYMENT_CREATE_RATE_LIMIT:100}
+    create-window-seconds: ${PAYMENT_CREATE_RATE_WINDOW_SECONDS:60}
+  kafka:
+    partitions: ${KAFKA_TOPIC_PARTITIONS:3}
+    replication-factor: ${KAFKA_TOPIC_REPLICATION_FACTOR:1}
+    min-in-sync-replicas: ${KAFKA_TOPIC_MIN_ISR:1}
+    retry-backoff-ms: 1000
+    max-retries: 2
+  outbox:
+    enabled: ${OUTBOX_ENABLED:true}
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:500}
+    batch-size: ${OUTBOX_BATCH_SIZE:100}
+    max-attempts: ${OUTBOX_MAX_ATTEMPTS:10}
+    retry-delay-ms: ${OUTBOX_RETRY_DELAY_MS:5000}
+    lease-ms: ${OUTBOX_LEASE_MS:60000}
+    send-timeout-ms: ${OUTBOX_SEND_TIMEOUT_MS:35000}
+  providers:
+    enabled: ${PROVIDER_ORCHESTRATION_ENABLED:true}
+    busy-retry-attempts: ${PROVIDER_BUSY_RETRY_ATTEMPTS:2}
+    a-base-url: ${PROVIDER_A_BASE_URL:}
+    b-base-url: ${PROVIDER_B_BASE_URL:}
+    connect-timeout: ${PROVIDER_CONNECT_TIMEOUT:1s}
+    read-timeout: ${PROVIDER_READ_TIMEOUT:2s}
+    orchestration-lease: ${PROVIDER_ORCHESTRATION_LEASE:60s}
+    routing:
+      UPI: ${PROVIDER_ROUTE_UPI:PROVIDER_A}
+      CARD: ${PROVIDER_ROUTE_CARD:PROVIDER_B}
+      NET_BANKING: ${PROVIDER_ROUTE_NET_BANKING:PROVIDER_A}
+      WALLET: ${PROVIDER_ROUTE_WALLET:PROVIDER_B}
+    fallback:
+      PROVIDER_A: ${PROVIDER_FALLBACK_A:PROVIDER_B}
+      PROVIDER_B: ${PROVIDER_FALLBACK_B:PROVIDER_A}
+  reconciliation:
+    enabled: ${RECONCILIATION_ENABLED:true}
+    poll-interval-ms: ${RECONCILIATION_POLL_INTERVAL_MS:5000}
+    batch-size: ${RECONCILIATION_BATCH_SIZE:50}
+    initial-delay: ${RECONCILIATION_INITIAL_DELAY:10s}
+    backoff: ${RECONCILIATION_BACKOFF:10s}
+    max-backoff: ${RECONCILIATION_MAX_BACKOFF:5m}
+    max-attempts: ${RECONCILIATION_MAX_ATTEMPTS:10}
+    lease: ${RECONCILIATION_LEASE:30s}
+  webhooks:
+    a-secret: ${PROVIDER_A_WEBHOOK_SECRET:}
+    b-secret: ${PROVIDER_B_WEBHOOK_SECRET:}
+    a-url: ${PAYFLOW_PROVIDER_A_WEBHOOK_URL:}
+    b-url: ${PAYFLOW_PROVIDER_B_WEBHOOK_URL:}
+    mock-delivery-enabled: ${MOCK_WEBHOOK_ENABLED:false}
+    mock-delay-ms: ${MOCK_WEBHOOK_DELAY_MS:3000}
+    mock-poll-interval-ms: ${MOCK_WEBHOOK_POLL_INTERVAL_MS:500}
+    max-attempts: ${MOCK_WEBHOOK_MAX_ATTEMPTS:3}
+    retry-delay-ms: ${MOCK_WEBHOOK_RETRY_DELAY_MS:1000}
+  mock-providers:
+    enabled: ${MOCK_PROVIDERS_ENABLED:false}
+
+resilience4j:
+  retry:
+    configs:
+      providerDefault:
+        max-attempts: ${PROVIDER_RETRY_MAX_ATTEMPTS:3}
+        wait-duration: ${PROVIDER_RETRY_WAIT:200ms}
+        retry-exceptions:
+          - com.payflow.payment.provider.RetryableProviderException
+    instances:
+      providerA:
+        base-config: providerDefault
+      providerB:
+        base-config: providerDefault
+      providerAStatus:
+        base-config: providerDefault
+      providerBStatus:
+        base-config: providerDefault
+      providerARefund:
+        base-config: providerDefault
+      providerBRefund:
+        base-config: providerDefault
+      providerARefundStatus:
+        base-config: providerDefault
+      providerBRefundStatus:
+        base-config: providerDefault
+  circuitbreaker:
+    configs:
+      providerDefault:
+        sliding-window-size: ${PROVIDER_CB_WINDOW_SIZE:10}
+        minimum-number-of-calls: ${PROVIDER_CB_MIN_CALLS:5}
+        failure-rate-threshold: ${PROVIDER_CB_FAILURE_RATE:50}
+        wait-duration-in-open-state: ${PROVIDER_CB_OPEN_WAIT:10s}
+        permitted-number-of-calls-in-half-open-state: ${PROVIDER_CB_HALF_OPEN_CALLS:2}
+        record-exceptions:
+          - com.payflow.payment.provider.ProviderTechnicalException
+        ignore-exceptions:
+          - com.payflow.payment.provider.ProviderRejectedException
+    instances:
+      providerA:
+        base-config: providerDefault
+      providerB:
+        base-config: providerDefault
+      providerAStatus:
+        base-config: providerDefault
+      providerBStatus:
+        base-config: providerDefault
+      providerARefund:
+        base-config: providerDefault
+      providerBRefund:
+        base-config: providerDefault
+      providerARefundStatus:
+        base-config: providerDefault
+      providerBRefundStatus:
+        base-config: providerDefault
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis
+  health:
+    kafka:
+      enabled: true
+  info:
+    env:
+      enabled: false
+  metrics:
+    tags:
+      application: payflow
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        payflow.provider.call: true
+        payflow.webhook.processing: true
+        payflow.reconciliation: true
+  tracing:
+    enabled: ${TRACING_ENABLED:true}
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}
+    propagation:
+      type: w3c
+  opentelemetry:
+    resource-attributes:
+      service.name: ${OTEL_SERVICE_NAME:payflow}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces}
+      connect-timeout: 2s
+      timeout: 2s
+logging:
+  structured:
+    format:
+      console: ${PAYFLOW_LOG_FORMAT:logstash}

@@ -1,0 +1,4 @@
+# Diagnostic image only. The normal Dockerfile/runtime remains a JRE.
+FROM eclipse-temurin:21-jdk-jammy AS diagnostics
+FROM payflow:local
+COPY --from=diagnostics /opt/java/openjdk /opt/java/openjdk

@@ -1,0 +1,34 @@
+target/
+*.log
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.DS_Store
+.env
+.env.*
+*.api-key
+
+!.env.example
+secrets/
+docker-data/
+
+# Kubernetes local credentials and rendered Secret output
+k8s/local/secrets.env
+k8s/local/rendered*.yaml
+
+# Performance artifacts (curated Markdown reports are retained)
+performance/results/*
+!performance/results/.gitkeep
+*.jfr
+__pycache__/
+
+# Merchant dashboard generated files (keep the credential-free template)
+node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+!frontend/.env.example

@@ -1,0 +1,13 @@
+# Internal management port: expose only through ClusterIP services.
+management:
+  server:
+    port: 9091
+    address: 0.0.0.0
+spring:
+  datasource:
+    hikari:
+      connection-timeout: 5000
+  lifecycle:
+    timeout-per-shutdown-phase: 40s
+server:
+  shutdown: graceful
